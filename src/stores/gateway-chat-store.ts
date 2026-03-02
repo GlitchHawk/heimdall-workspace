@@ -95,6 +95,47 @@ function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+/**
+ * Strip <final>...</final> wrapper tags that the OpenClaw gateway emits as a
+ * streaming-completion sentinel in agent chunk events.
+ *
+ * The gateway sometimes wraps the last streaming chunk (or a standalone
+ * assistant-message event that fires before the formal `state: 'final'` chat
+ * event) in <final>…</final> tags.  When the subsequent clean `done` event
+ * arrives, the dedup logic compares its text against the already-stored tagged
+ * version — they don't match — so BOTH messages end up in realtimeMessages and
+ * appear side-by-side in the UI.
+ *
+ * Stripping these tags at the store boundary (before storing or comparing)
+ * ensures the two copies are treated as the same message regardless of whether
+ * the gateway included the sentinel tags or not.
+ */
+function stripFinalTags(text: string): string {
+  // <final>…</final>  — strip outer wrapper (case-insensitive, allows whitespace)
+  return text.replace(/^\s*<final>\s*([\s\S]*?)\s*<\/final>\s*$/i, '$1').trim()
+}
+
+/**
+ * Return a copy of `msg` with <final>...</final> tags stripped from all text
+ * content blocks.  Other content types (thinking, toolCall, etc.) are left
+ * untouched.  If the message has no text content the original object is
+ * returned as-is so we don't allocate unnecessarily.
+ */
+function stripFinalTagsFromMessage(msg: GatewayMessage): GatewayMessage {
+  if (!Array.isArray(msg.content)) return msg
+  let modified = false
+  const nextContent = msg.content.map((part) => {
+    if (part.type !== 'text') return part
+    const raw = (part as any).text ?? ''
+    const stripped = stripFinalTags(typeof raw === 'string' ? raw : String(raw))
+    if (stripped === raw) return part
+    modified = true
+    return { ...part, text: stripped }
+  })
+  if (!modified) return msg
+  return { ...msg, content: nextContent as typeof msg.content }
+}
+
 function getMessageId(msg: GatewayMessage | null | undefined): string | undefined {
   if (!msg) return undefined
   const id = (msg as { id?: string }).id
@@ -169,14 +210,24 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
         const messages = new Map(state.realtimeMessages)
         const sessionMessages = [...(messages.get(sessionKey) ?? [])]
 
-        const newId = getMessageId(event.message)
-        const newClientNonce = getClientNonce(event.message)
-        const newMultipartSignature = messageMultipartSignature(event.message)
+        // Strip <final>…</final> sentinel tags from assistant messages before
+        // storing or comparing.  The gateway can emit a bare assistant-message
+        // event (state=undefined) whose text is still wrapped in these tags,
+        // and the subsequent clean `done` event then fails the dedup check
+        // because the stored text differs from the final text.
+        const normalizedMessage =
+          event.message.role === 'assistant'
+            ? stripFinalTagsFromMessage(event.message)
+            : event.message
+
+        const newId = getMessageId(normalizedMessage)
+        const newClientNonce = getClientNonce(normalizedMessage)
+        const newMultipartSignature = messageMultipartSignature(normalizedMessage)
 
         const optimisticIndex =
           newClientNonce.length > 0
             ? sessionMessages.findIndex((existing) => {
-                if (existing.role !== event.message.role) return false
+                if (existing.role !== normalizedMessage.role) return false
                 const existingNonce = getClientNonce(existing)
                 if (existingNonce.length === 0 || existingNonce !== newClientNonce) {
                   return false
@@ -189,7 +240,7 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
             : -1
 
         const duplicateIndex = sessionMessages.findIndex((existing) => {
-          if (existing.role !== event.message.role) return false
+          if (existing.role !== normalizedMessage.role) return false
           const existingId = getMessageId(existing)
           if (newId && existingId && newId === existingId) return true
 
@@ -206,7 +257,7 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
 
         // Mark user messages from external sources
         const incomingMessage: GatewayMessage = {
-          ...event.message,
+          ...normalizedMessage,
           __realtimeSource:
             event.type === 'user_message' ? (event as any).source : undefined,
           status: undefined,
@@ -311,14 +362,19 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
         let completeMessage: GatewayMessage | null = null
 
         if (event.message) {
-          // Prefer done event's message payload — it's the authoritative final response
+          // Prefer done event's message payload — it's the authoritative final response.
+          // Strip <final>…</final> sentinel tags: the `done` message may still carry
+          // them if the gateway serialises the final state from its streaming buffer.
+          const cleanedMessage = stripFinalTagsFromMessage(event.message)
           completeMessage = {
-            ...event.message,
+            ...cleanedMessage,
             timestamp: now,
             __streamingStatus: 'complete' as any,
           }
         } else if (streaming && streaming.text) {
-          // Fallback: build from streaming state if no final payload
+          // Fallback: build from streaming state if no final payload.
+          // Strip any <final> tags that may have accumulated in the stream buffer.
+          const cleanStreamText = stripFinalTags(streaming.text)
           const content: Array<MessageContent> = []
 
           if (streaming.thinking) {
@@ -328,10 +384,10 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
             } as ThinkingContent)
           }
 
-          if (streaming.text) {
+          if (cleanStreamText) {
             content.push({
               type: 'text',
-              text: streaming.text,
+              text: cleanStreamText,
             } as TextContent)
           }
 
@@ -356,7 +412,9 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
           const messages = new Map(state.realtimeMessages)
           const sessionMessages = [...(messages.get(sessionKey) ?? [])]
 
-          // Deduplicate: by ID or exact content only (bug #7 fix)
+          // Deduplicate: by ID or exact content (bug #7 fix).
+          // extractTextFromContent already strips <final> tags, so a previously
+          // stored tagged message will correctly match this clean final message.
           const completeText = extractTextFromContent(completeMessage.content)
           const completeId = getMessageId(completeMessage)
           const isDuplicate = sessionMessages.some((existing) => {
@@ -371,6 +429,24 @@ export const useGatewayChatStore = create<GatewayChatState>((set, get) => ({
             sessionMessages.push(completeMessage)
             messages.set(sessionKey, sessionMessages)
             set({ realtimeMessages: messages })
+          } else {
+            // If there IS a duplicate (e.g. a tagged pre-final message was stored),
+            // replace it with the clean final version so the UI shows clean text.
+            const existingIdx = sessionMessages.findIndex((existing) => {
+              if (existing.role !== 'assistant') return false
+              const existingId = getMessageId(existing)
+              if (completeId && existingId && completeId === existingId) return true
+              if (completeText && completeText === extractTextFromContent(existing.content)) return true
+              return false
+            })
+            if (existingIdx >= 0) {
+              sessionMessages[existingIdx] = {
+                ...sessionMessages[existingIdx],
+                ...completeMessage,
+              }
+              messages.set(sessionKey, sessionMessages)
+              set({ realtimeMessages: messages })
+            }
           }
         }
 
@@ -520,14 +596,16 @@ function extractTextFromContent(
   content: Array<MessageContent> | undefined,
 ): string {
   if (!content || !Array.isArray(content)) return ''
-  return content
-    .filter(
-      (c): c is TextContent =>
-        c.type === 'text' && typeof (c as any).text === 'string',
-    )
-    .map((c) => c.text)
-    .join('\n')
-    .trim()
+  return stripFinalTags(
+    content
+      .filter(
+        (c): c is TextContent =>
+          c.type === 'text' && typeof (c as any).text === 'string',
+      )
+      .map((c) => c.text)
+      .join('\n')
+      .trim(),
+  )
 }
 
 /**
@@ -547,7 +625,7 @@ function extractMessageText(msg: GatewayMessage | null | undefined): string {
   const raw = msg as Record<string, unknown>
   for (const key of ['text', 'body', 'message']) {
     const val = raw[key]
-    if (typeof val === 'string' && val.trim().length > 0) return val.trim()
+    if (typeof val === 'string' && val.trim().length > 0) return stripFinalTags(val.trim())
   }
   return ''
 }
