@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -215,10 +215,61 @@ export function UpdateCenterNotifier() {
     setNotes(null)
   }
 
+  // Auto-dismiss timer: fade away after 15s if not hovered
+  const [autoDismissed, setAutoDismissed] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Reset timer whenever hovered state changes or visible products change
+  useEffect(() => {
+    // Clear existing timer
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+
+    // If hovered, don't auto-dismiss
+    if (isHovered) {
+      setAutoDismissed(false)
+      return
+    }
+
+    // If there are visible products, start the 15s timer
+    if (visibleProducts.length > 0 && !autoDismissed) {
+      timerRef.current = setTimeout(() => {
+        setAutoDismissed(true)
+      }, 15000)
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [visibleProducts, isHovered, autoDismissed])
+
+  // When auto-dismissed, actually dismiss all products after fade animation
+  useEffect(() => {
+    if (!autoDismissed || visibleProducts.length === 0) return
+
+    // Wait for fade animation to complete (0.5s) then dismiss
+    const dismissTimer = setTimeout(() => {
+      visibleProducts.forEach((product) => dismiss(product))
+      setAutoDismissed(false)
+    }, 500)
+
+    return () => clearTimeout(dismissTimer)
+  }, [autoDismissed, visibleProducts])
+
   return (
     <>
       <ReleaseNotes notes={notes} onClose={closeNotes} />
-      <div className="pointer-events-none fixed left-1/2 top-[calc(var(--titlebar-h,0px)+1rem)] z-[9998] flex w-[92vw] max-w-md -translate-x-1/2 flex-col gap-3">
+      <div
+        className="pointer-events-none fixed right-4 top-[calc(var(--titlebar-h,0px)+1rem)] z-[9998] flex w-[92vw] max-w-[380px] flex-col gap-3"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
         <AnimatePresence>
           {visibleProducts.map((product) => (
             <UpdateCard
@@ -228,6 +279,7 @@ export function UpdateCenterNotifier() {
               error={errors[product.id]}
               onDismiss={() => dismiss(product)}
               onUpdate={() => update(product)}
+              autoDismissed={autoDismissed}
             />
           ))}
         </AnimatePresence>
@@ -242,12 +294,14 @@ function UpdateCard({
   error,
   onDismiss,
   onUpdate,
+  autoDismissed,
 }: {
   product: ProductUpdateStatus
   phase: Phase
   error: string
   onDismiss: () => void
   onUpdate: () => void
+  autoDismissed: boolean
 }) {
   const updating = phase === 'updating'
   const blocked = product.updateAvailable && !product.canUpdate
@@ -261,9 +315,9 @@ function UpdateCard({
   return (
     <motion.div
       initial={{ opacity: 0, y: -24, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      animate={{ opacity: autoDismissed ? 0 : 1, y: autoDismissed ? -24 : 0, scale: autoDismissed ? 0.96 : 1 }}
       exit={{ opacity: 0, y: -24, scale: 0.96 }}
-      transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+      transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
       // Firefox/Linux right-clicks on this card were intermittently eaten by
       // the surrounding motion/backdrop layers, making the modal feel
       // unresponsive and preventing copy/open-in-new-tab actions. Let the
@@ -284,10 +338,10 @@ function UpdateCard({
           style={{ background: 'var(--theme-accent)' }}
         />
       ) : null}
-      <div className="flex items-center gap-3 px-5 py-3.5">
+      <div className="flex items-center gap-2.5 px-4 py-3">
         <div
           className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-xl',
+            'flex size-8 shrink-0 items-center justify-center rounded-xl',
             blocked || phase === 'error' ? 'bg-amber-500/15' : '',
           )}
           style={
@@ -307,7 +361,7 @@ function UpdateCard({
                   ? Tick01Icon
                   : ArrowUp02Icon
             }
-            size={18}
+            size={16}
             strokeWidth={2}
             className={updating ? 'animate-spin' : undefined}
             style={{
@@ -320,24 +374,22 @@ function UpdateCard({
         </div>
         <div className="min-w-0 flex-1">
           <p
-            className="text-sm font-semibold"
+            className="text-[0.8em] font-semibold"
             style={{ color: 'var(--theme-text)' }}
           >
             {blocked
               ? `${product.label} update blocked`
               : `${product.label} update available`}
           </p>
-          {/* Don't truncate when blocked — the full reason is what the
-              user needs to act on. See #293. */}
           <p
-            className={cn('text-xs', blocked ? '' : 'truncate')}
+            className={cn('text-[0.7em]', blocked ? '' : 'truncate')}
             style={{ color: 'var(--theme-muted)' }}
           >
             {subtitle}
           </p>
           {blocked && product.repoPath ? (
             <p
-              className="mt-0.5 truncate font-mono text-[11px]"
+              className="mt-0.5 truncate font-mono text-[0.65em]"
               style={{ color: 'var(--theme-muted)' }}
               title={product.repoPath}
             >
@@ -345,11 +397,11 @@ function UpdateCard({
             </p>
           ) : null}
           {blocked && product.blockingFiles && product.blockingFiles.length > 0 ? (
-            <ul className="mt-1 max-h-24 overflow-auto pr-1">
+            <ul className="mt-1 max-h-20 overflow-auto pr-1">
               {product.blockingFiles.slice(0, 8).map((file) => (
                 <li
                   key={file}
-                  className="truncate font-mono text-[11px]"
+                  className="truncate font-mono text-[0.65em]"
                   style={{ color: 'var(--theme-muted)' }}
                   title={file}
                 >
@@ -358,7 +410,7 @@ function UpdateCard({
               ))}
               {product.blockingFiles.length > 8 ? (
                 <li
-                  className="text-[11px] italic"
+                  className="text-[0.65em] italic"
                   style={{ color: 'var(--theme-muted)' }}
                 >
                   …and {product.blockingFiles.length - 8} more
@@ -367,20 +419,20 @@ function UpdateCard({
             </ul>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           {product.canUpdate ? (
             <button
               type="button"
               onClick={onUpdate}
               disabled={updating}
-              className="rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="rounded-lg px-3 py-1 text-[0.75em] font-semibold text-gray-900 transition-opacity hover:opacity-90 disabled:opacity-60"
               style={{ background: 'var(--theme-accent)' }}
             >
               {updating ? 'Updating' : 'Update'}
             </button>
           ) : (
             <span
-              className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+              className="rounded-lg px-2.5 py-1 text-[0.75em] font-semibold"
               style={{
                 background: 'var(--theme-card2)',
                 color: 'var(--theme-muted)',
@@ -392,11 +444,11 @@ function UpdateCard({
           <button
             type="button"
             onClick={onDismiss}
-            className="rounded-lg p-1.5 transition-opacity hover:opacity-80"
+            className="rounded-lg p-1 transition-opacity hover:opacity-80"
             style={{ color: 'var(--theme-muted)' }}
             aria-label={`Dismiss ${product.label} update`}
           >
-            <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} />
+            <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2} />
           </button>
         </div>
       </div>
