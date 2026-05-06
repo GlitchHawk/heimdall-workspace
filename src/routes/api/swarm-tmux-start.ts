@@ -42,6 +42,7 @@ const TMUX_BIN_CANDIDATES = [
   process.env.TMUX_BIN,
   '/opt/homebrew/bin/tmux',
   '/usr/local/bin/tmux',
+  '/usr/bin/tmux',
   join(homedir(), '.local', 'bin', 'tmux'),
   'tmux',
 ].filter((value): value is string => Boolean(value))
@@ -49,16 +50,7 @@ const TMUX_BIN_CANDIDATES = [
 function resolveTmuxBin(): string | null {
   for (const candidate of TMUX_BIN_CANDIDATES) {
     if (candidate.includes('/')) {
-      // On this launchd-started Workspace, existsSync can incorrectly miss
-      // Homebrew binaries and then execFile('tmux') fails with ENOENT because
-      // PATH has been reshaped by pnpm. Prefer the stable absolute Homebrew
-      // paths; execFile will surface a clear error if they truly do not exist.
-      if (
-        candidate === process.env.TMUX_BIN ||
-        candidate === '/opt/homebrew/bin/tmux' ||
-        candidate === '/usr/local/bin/tmux' ||
-        existsSync(candidate)
-      ) {
+      if (existsSync(candidate)) {
         return candidate
       }
       continue

@@ -496,12 +496,35 @@ export async function getSkillCategories(): Promise<unknown> {
 // ── Config ───────────────────────────────────────────────────────
 
 export async function getConfig(): Promise<ClaudeConfig> {
+  // Route to dashboard when available — /api/config is a dashboard-only endpoint.
+  // The gateway (port 8650) does not serve /api/config, causing 404/503 errors.
+  if (getCapabilities().dashboard.available) {
+    const resp = await dashboardFetch('/api/config')
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      throw new Error(`Dashboard API /api/config: ${resp.status} ${body}`)
+    }
+    return resp.json() as Promise<ClaudeConfig>
+  }
   return claudeGet<ClaudeConfig>('/api/config')
 }
 
 export async function patchConfig(
   patch: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  // Route to dashboard when available — /api/config is a dashboard-only endpoint.
+  if (getCapabilities().dashboard.available) {
+    const resp = await dashboardFetch('/api/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      throw new Error(`Dashboard API PATCH /api/config: ${resp.status} ${text}`)
+    }
+    return resp.json() as Promise<Record<string, unknown>>
+  }
   return claudePatch<Record<string, unknown>>('/api/config', patch)
 }
 

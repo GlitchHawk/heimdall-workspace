@@ -1,12 +1,30 @@
+import { Suspense, lazy } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { usePageTitle } from '@/hooks/use-page-title'
-import { OperationsScreen } from '@/screens/agents/operations-screen'
+
+const OperationsScreen = lazy(async () => {
+  const module = await import('@/screens/agents/operations-screen')
+  return { default: module.OperationsScreen }
+})
+
+function OperationsPending() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center">
+        <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-accent-500 border-r-transparent mb-3" />
+        <p className="text-sm text-primary-500">Loading operations...</p>
+      </div>
+    </div>
+  )
+}
 
 export const Route = createFileRoute('/operations')({
   ssr: false,
   component: function OperationsRoute() {
-    usePageTitle('Operations')
-    return <OperationsScreen />
+    return (
+      <Suspense fallback={<OperationsPending />}>
+        <OperationsScreen />
+      </Suspense>
+    )
   },
   errorComponent: function OperationsError({ error }) {
     return (
@@ -28,14 +46,5 @@ export const Route = createFileRoute('/operations')({
       </div>
     )
   },
-  pendingComponent: function OperationsPending() {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-accent-500 border-r-transparent mb-3" />
-          <p className="text-sm text-primary-500">Loading operations...</p>
-        </div>
-      </div>
-    )
-  },
+  pendingComponent: OperationsPending,
 })

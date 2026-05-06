@@ -391,10 +391,11 @@ export function useChatHistory({
     placeholderData: function useCachedHistory(): HistoryResponse | undefined {
       return queryClient.getQueryData(historyKey)
     },
-    refetchOnMount: 'always',
+    keepPreviousData: true, // Keep previous session visible while new one loads
+    refetchOnMount: true,
     refetchOnWindowFocus: true,
     refetchInterval: historyRefetchInterval,
-    staleTime: 0, // Always refetch on mount — prevents stale data after tab navigation
+    staleTime: 30_000, // Cache for 30s — switching back to a recent session is instant
     gcTime: 1000 * 60 * 10,
     structuralSharing: true,
     notifyOnChangeProps: ['data', 'error', 'isError'],

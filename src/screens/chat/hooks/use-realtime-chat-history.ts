@@ -442,20 +442,10 @@ export function useRealtimeChatHistory({
   // DISABLED: This was aggressively clearing realtime messages before history
   // caught up, causing the "message appears then disappears" bug.
   // TODO: Re-enable with smarter timing (e.g. only after history confirms the message)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    return // disabled
-    if (portableMode) return
-    if (!effectiveSessionKey || effectiveSessionKey === 'new') return
-    if (realtimeMessages.length === 0) return
-    if (mergedMessages.length !== historyMessages.length) return
-    clearRealtimeBuffer(effectiveSessionKey)
-  }, [
-    clearRealtimeBuffer,
-    effectiveSessionKey,
-    historyMessages.length,
-    mergedMessages.length,
-    realtimeMessages.length,
-  ])
+    return // intentionally disabled — see TODO above
+  }, [])
 
   useEffect(() => {
     if (!onCompactionStart) return

@@ -351,8 +351,8 @@ function ThinkingBubble({
   )
 }
 
-const VIRTUAL_ROW_HEIGHT = 136
-const VIRTUAL_OVERSCAN = 8
+const VIRTUAL_ROW_HEIGHT = 80
+const VIRTUAL_OVERSCAN = 4
 const NEAR_BOTTOM_THRESHOLD = 200
 // Pull-to-refresh constants removed
 
@@ -601,6 +601,7 @@ function ChatMessageListComponent({
   const [streamingCleared, setStreamingCleared] = useState(0)
   streamingTargetsClearRef.current = () => setStreamingCleared((c) => c + 1)
   const lastScrollTopRef = useRef(0)
+  const scrollRafRef = useRef<number | null>(null)
   const isNearBottomRef = useRef(true)
   const [isNearBottom, setIsNearBottom] = useState(true)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -620,7 +621,7 @@ function ChatMessageListComponent({
     return window.matchMedia('(max-width: 767px)').matches
   })
   // Pull-to-refresh removed (was buggy on mobile)
-  const [scrollMetrics] = useState({
+  const [scrollMetrics, setScrollMetrics] = useState({
     scrollTop: 0,
     scrollHeight: 0,
     clientHeight: 0,
@@ -654,7 +655,8 @@ function ChatMessageListComponent({
     }
   }, [contentStyle, isMobileViewport])
 
-  // Simple scroll handler — only tracks if user is near bottom via refs (no state updates)
+  // Simple scroll handler — tracks if user is near bottom via refs + updates
+  // scroll metrics for virtualization
   const handleUserScroll = useCallback(function handleUserScroll(metrics: {
     scrollTop: number
     scrollHeight: number
@@ -672,6 +674,18 @@ function ChatMessageListComponent({
     } else if (nearBottom) {
       stickToBottomRef.current = true
       isNearBottomRef.current = true
+    }
+
+    // Update scroll metrics for virtualization — use rAF to batch updates
+    if (!scrollRafRef.current) {
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null
+        setScrollMetrics({
+          scrollTop: metrics.scrollTop,
+          scrollHeight: metrics.scrollHeight,
+          clientHeight: metrics.clientHeight,
+        })
+      })
     }
   }, [])
 
@@ -1046,25 +1060,22 @@ function ChatMessageListComponent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayEntries, streamingCleared])
 
-  const lastAssistantIndex = visibleEntries
-    .filter(({ message }) => message.role === 'assistant')
-    .map(({ sourceIndex }) => sourceIndex)
-    .pop()
-  const lastUserIndex = visibleEntries
-    .map(({ message, sourceIndex }, index) => ({ message, sourceIndex, index }))
-    .filter(({ message }) => message.role === 'user')
-    .map(({ index }) => index)
-    .pop()
-  // Show typing indicator when waiting for response and no visible text yet.
-  // Bug 2 fix: also show during grace period (thinkingGrace) so there's no
-  // blank-space flash between waitingForResponse clearing and the response
-  // message actually rendering.
-  // Gap fix: also show whenever isStreaming=true but streamingText is still
-  // empty — this covers ALL cases where the stream has started (SSE connected,
-  // tool calls in flight OR just completed) but the first text chunk hasn't
-  // arrived yet. Removing the old `activeToolCalls.length > 0` gate ensures
-  // the indicator stays alive even after tool calls finish and before text flows.
-  const showTypingIndicator = (() => {
+  // Memoized indices — only recompute when visibleEntries changes
+  const lastAssistantIndex = useMemo(() => {
+    return visibleEntries
+      .filter(({ message }) => message.role === 'assistant')
+      .map(({ sourceIndex }) => sourceIndex)
+      .pop()
+  }, [visibleEntries])
+  const lastUserIndex = useMemo(() => {
+    return visibleEntries
+      .map(({ message, sourceIndex }, index) => ({ message, sourceIndex, index }))
+      .filter(({ message }) => message.role === 'user')
+      .map(({ index }) => index)
+      .pop()
+  }, [visibleEntries])
+  // Memoized typing indicator — only recompute when its dependencies change
+  const showTypingIndicator = useMemo(() => {
     // sending covers the instant the HTTP request fires before waitingForResponse
     // is confirmed by the server (they're typically batched but this is belt+suspenders)
     const effectivelyWaiting = waitingForResponse || thinkingGrace || sending
@@ -1101,7 +1112,11 @@ function ChatMessageListComponent({
       return false
     }
     return true
-  })()
+  }, [
+    waitingForResponse, thinkingGrace, sending, isStreaming, isCompacting,
+    activeToolCalls, liveToolActivity, lifecycleEvents, streamingThinking,
+    streamingText, visibleEntries, streamingState
+  ])
 
   const showResearchCard = Boolean(
     researchCard && researchCard.steps.length > 0,
@@ -1166,7 +1181,7 @@ function ChatMessageListComponent({
   // Pin the last user+assistant group without adding bottom padding.
   const groupStartIndex = typeof lastUserIndex === 'number' ? lastUserIndex : -1
   const hasGroup = pinToTop && groupStartIndex >= 0
-  const shouldVirtualize = false // Disabled — causes scroll glitches
+  const shouldVirtualize = false // Disabled: with only 50 messages loaded, virtualization causes flickering. Re-enable only if message count increases significantly.
 
   const virtualRange = useMemo(() => {
     if (!shouldVirtualize || scrollMetrics.clientHeight <= 0) {
@@ -1209,125 +1224,141 @@ function ChatMessageListComponent({
     )
   }
 
-  function renderMessage(entry: DisplayEntry, entryIndex: number) {
-    const chatMessage = entry.message
-    const realIndex = entry.sourceIndex
-    const messageIsStreaming = isMessageStreaming(chatMessage, realIndex)
-    const stableId = getStableMessageId(chatMessage, realIndex)
-    const signature = streamingState.signatureById.get(stableId)
-    const simulateStreaming =
-      !messageIsStreaming && streamingState.streamingTargets.has(stableId)
-    const spacingClass = cn(
-      getMessageSpacingClass(visibleEntries, entryIndex),
-      getToolGroupClass(visibleEntries, entryIndex),
-    )
-    const forceActionsVisible =
-      typeof lastAssistantIndex === 'number' && realIndex === lastAssistantIndex
-    const hasToolCalls =
-      chatMessage.role === 'assistant' &&
-      (getToolCallsFromMessage(chatMessage).length > 0 ||
-        entry.attachedToolMessages.length > 0)
+  // Memoized message row — only re-renders when its specific message data changes
+  // This is extracted from renderMessage to avoid re-computing for all messages
+  // on every parent render.
+  const MessageRow = useMemo(() => {
+    function MessageRowComponent({ entry, entryIndex }: { entry: DisplayEntry; entryIndex: number }) {
+      const chatMessage = entry.message
+      const realIndex = entry.sourceIndex
+      const messageIsStreaming = isMessageStreaming(chatMessage, realIndex)
+      const stableId = getStableMessageId(chatMessage, realIndex)
+      const signature = streamingState.signatureById.get(stableId)
+      const simulateStreaming =
+        !messageIsStreaming && streamingState.streamingTargets.has(stableId)
+      const spacingClass = cn(
+        getMessageSpacingClass(visibleEntries, entryIndex),
+        getToolGroupClass(visibleEntries, entryIndex),
+      )
+      const forceActionsVisible =
+        typeof lastAssistantIndex === 'number' && realIndex === lastAssistantIndex
+      const hasToolCalls =
+        chatMessage.role === 'assistant' &&
+        (getToolCallsFromMessage(chatMessage).length > 0 ||
+          entry.attachedToolMessages.length > 0)
 
-    const searchMatchIndex = messageSearchMatchIndexById.get(stableId)
-    const isSearchMatch = typeof searchMatchIndex === 'number'
-    const isActiveMatch =
-      isSearchMatch && searchMatchIndex === activeSearchMatchIndex
+      const searchMatchIndex = messageSearchMatchIndexById.get(stableId)
+      const isSearchMatch = typeof searchMatchIndex === 'number'
+      const isActiveMatch =
+        isSearchMatch && searchMatchIndex === activeSearchMatchIndex
 
-    // If this is a user message and an assistant reply exists after it,
-    // the send obviously succeeded — never show Retry.
-    const hasAssistantReply =
-      chatMessage.role === 'user' &&
-      entryIndex + 1 < visibleEntries.length &&
-      visibleEntries[entryIndex + 1]?.message.role === 'assistant'
-    const effectiveOnRetry = hasAssistantReply ? undefined : onRetryMessage
+      // If this is a user message and an assistant reply exists after it,
+      // the send obviously succeeded — never show Retry.
+      const hasAssistantReply =
+        chatMessage.role === 'user' &&
+        entryIndex + 1 < visibleEntries.length &&
+        visibleEntries[entryIndex + 1]?.message.role === 'assistant'
+      const effectiveOnRetry = hasAssistantReply ? undefined : onRetryMessage
 
-    // For the live streaming placeholder: wrap in a stable div whose key never
-    // changes for the lifetime of the stream. The div's opacity toggles between
-    // 0 (no text yet) and 1 (text flowing) without unmounting the inner
-    // MessageItem — preserving its reveal-timer state so text streams word-by-word.
-    // ThinkingBubble stays visible via `streamingButEmpty` in showTypingIndicator
-    // while this wrapper is invisible.
-    if (messageIsStreaming) {
-      const hasStreamingActivity =
-        normalizedStreamingToolCalls.length > 0 ||
-        liveToolActivity.length > 0 ||
-        lifecycleEvents.length > 0 ||
-        Boolean(streamingThinking && streamingThinking.trim().length > 0)
-      const isEmptyPlaceholder =
-        (!streamingText || streamingText.trim().length === 0) &&
-        !hasStreamingActivity
+      // For the live streaming placeholder: wrap in a stable div whose key never
+      // changes for the lifetime of the stream. The div's opacity toggles between
+      // 0 (no text yet) and 1 (text flowing) without unmounting the inner
+      // MessageItem — preserving its reveal-timer state so text streams word-by-word.
+      // ThinkingBubble stays visible via `streamingButEmpty` in showTypingIndicator
+      // while this wrapper is invisible.
+      if (messageIsStreaming) {
+        const hasStreamingActivity =
+          normalizedStreamingToolCalls.length > 0 ||
+          liveToolActivity.length > 0 ||
+          lifecycleEvents.length > 0 ||
+          Boolean(streamingThinking && streamingThinking.trim().length > 0)
+        const isEmptyPlaceholder =
+          (!streamingText || streamingText.trim().length === 0) &&
+          !hasStreamingActivity
+        return (
+          <div
+            key={stableId}
+            style={{
+              display: isEmptyPlaceholder ? 'none' : undefined,
+              opacity: isEmptyPlaceholder ? 0 : 1,
+              pointerEvents: isEmptyPlaceholder ? 'none' : undefined,
+              transition: 'opacity 150ms ease',
+            }}
+            aria-hidden={isEmptyPlaceholder ? true : undefined}
+          >
+            <MessageItem
+              message={chatMessage}
+              attachedToolMessages={entry.attachedToolMessages}
+              onRetryMessage={effectiveOnRetry}
+              toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
+              forceActionsVisible={forceActionsVisible}
+              wrapperClassName={spacingClass}
+              wrapperDataMessageId={stableId}
+              bubbleClassName={
+                isActiveMatch
+                  ? 'ring-2 ring-amber-400 bg-amber-50/50'
+                  : isSearchMatch
+                    ? 'bg-amber-50/30'
+                    : undefined
+              }
+              toolCalls={
+                messageIsStreaming ? normalizedStreamingToolCalls : undefined
+              }
+              isStreaming={messageIsStreaming}
+              streamingText={streamingText}
+              streamingThinking={
+                messageIsStreaming ? streamingThinking : undefined
+              }
+              lifecycleEvents={messageIsStreaming ? lifecycleEvents : undefined}
+              simulateStreaming={simulateStreaming}
+              streamingKey={signature}
+              expandAllToolSections={expandAllToolSections}
+            />
+          </div>
+        )
+      }
+
       return (
-        <div
+        <MessageItem
           key={stableId}
-          style={{
-            display: isEmptyPlaceholder ? 'none' : undefined,
-            opacity: isEmptyPlaceholder ? 0 : 1,
-            pointerEvents: isEmptyPlaceholder ? 'none' : undefined,
-            transition: 'opacity 150ms ease',
-          }}
-          aria-hidden={isEmptyPlaceholder ? true : undefined}
-        >
-          <MessageItem
-            message={chatMessage}
-            attachedToolMessages={entry.attachedToolMessages}
-            onRetryMessage={effectiveOnRetry}
-            toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
-            forceActionsVisible={forceActionsVisible}
-            wrapperClassName={spacingClass}
-            wrapperDataMessageId={stableId}
-            bubbleClassName={
-              isActiveMatch
-                ? 'ring-2 ring-amber-400 bg-amber-50/50'
-                : isSearchMatch
-                  ? 'bg-amber-50/30'
-                  : undefined
-            }
-            toolCalls={
-              messageIsStreaming ? normalizedStreamingToolCalls : undefined
-            }
-            isStreaming={messageIsStreaming}
-            streamingText={streamingText}
-            streamingThinking={
-              messageIsStreaming ? streamingThinking : undefined
-            }
-            lifecycleEvents={messageIsStreaming ? lifecycleEvents : undefined}
-            simulateStreaming={simulateStreaming}
-            streamingKey={signature}
-            expandAllToolSections={expandAllToolSections}
-          />
-        </div>
+          message={chatMessage}
+          attachedToolMessages={entry.attachedToolMessages}
+          onRetryMessage={effectiveOnRetry}
+          toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
+          forceActionsVisible={forceActionsVisible}
+          wrapperClassName={spacingClass}
+          wrapperDataMessageId={stableId}
+          bubbleClassName={
+            isActiveMatch
+              ? 'ring-2 ring-amber-400 bg-amber-50/50'
+              : isSearchMatch
+                ? 'bg-amber-50/30'
+                : undefined
+          }
+          toolCalls={
+            messageIsStreaming ? normalizedStreamingToolCalls : undefined
+          }
+          isStreaming={messageIsStreaming}
+          streamingText={messageIsStreaming ? streamingText : undefined}
+          streamingThinking={messageIsStreaming ? streamingThinking : undefined}
+          lifecycleEvents={messageIsStreaming ? lifecycleEvents : undefined}
+          simulateStreaming={simulateStreaming}
+          streamingKey={signature}
+          expandAllToolSections={expandAllToolSections}
+        />
       )
     }
+    return MessageRowComponent
+  }, [
+    streamingState, visibleEntries, lastAssistantIndex,
+    messageSearchMatchIndexById, activeSearchMatchIndex, onRetryMessage,
+    toolResultsByCallId, normalizedStreamingToolCalls, liveToolActivity,
+    lifecycleEvents, streamingThinking, streamingText, expandAllToolSections,
+    isMessageStreaming
+  ])
 
-    return (
-      <MessageItem
-        key={stableId}
-        message={chatMessage}
-        attachedToolMessages={entry.attachedToolMessages}
-        onRetryMessage={effectiveOnRetry}
-        toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
-        forceActionsVisible={forceActionsVisible}
-        wrapperClassName={spacingClass}
-        wrapperDataMessageId={stableId}
-        bubbleClassName={
-          isActiveMatch
-            ? 'ring-2 ring-amber-400 bg-amber-50/50'
-            : isSearchMatch
-              ? 'bg-amber-50/30'
-              : undefined
-        }
-        toolCalls={
-          messageIsStreaming ? normalizedStreamingToolCalls : undefined
-        }
-        isStreaming={messageIsStreaming}
-        streamingText={messageIsStreaming ? streamingText : undefined}
-        streamingThinking={messageIsStreaming ? streamingThinking : undefined}
-        lifecycleEvents={messageIsStreaming ? lifecycleEvents : undefined}
-        simulateStreaming={simulateStreaming}
-        streamingKey={signature}
-        expandAllToolSections={expandAllToolSections}
-      />
-    )
+  function renderMessage(entry: DisplayEntry, entryIndex: number) {
+    return MessageRow({ entry, entryIndex })
   }
 
   // Sync near-bottom ref to state every 500ms for button visibility

@@ -129,12 +129,7 @@ function resolveTmuxBin(): string | null {
   }
   for (const candidate of TMUX_BIN_CANDIDATES) {
     if (candidate.includes('/')) {
-      if (
-        candidate === process.env.TMUX_BIN ||
-        candidate === '/opt/homebrew/bin/tmux' ||
-        candidate === '/usr/local/bin/tmux' ||
-        existsSync(candidate)
-      ) {
+      if (existsSync(candidate)) {
         return candidate
       }
       continue

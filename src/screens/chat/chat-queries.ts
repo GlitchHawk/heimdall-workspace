@@ -66,7 +66,7 @@ export async function fetchHistory(payload: {
   sessionKey: string
   friendlyId: string
 }): Promise<HistoryResponse> {
-  const query = new URLSearchParams({ limit: '1000' })
+  const query = new URLSearchParams({ limit: '50' })
   if (payload.sessionKey) query.set('sessionKey', payload.sessionKey)
   if (payload.friendlyId) query.set('friendlyId', payload.friendlyId)
   const res = await fetch(`/api/history?${query.toString()}`)

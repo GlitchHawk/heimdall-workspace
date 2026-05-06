@@ -26,6 +26,7 @@ const TMUX_BIN_CANDIDATES = [
   join(homedir(), '.local', 'bin', 'tmux'),
   '/opt/homebrew/bin/tmux',
   '/usr/local/bin/tmux',
+  '/usr/bin/tmux',
   'tmux',
 ]
 
