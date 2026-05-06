@@ -189,7 +189,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
   const isOnTerminalRoute = pathname.startsWith('/terminal')
   const isEmbeddedSurface =
     search?.embed === '1' || search?.embed === 'true' || search?.mode === 'embed'
-  const isChromeFreeSurface = isEmbeddedSurface || isOnremovedLandingRoute
+  const isChromeFreeSurface = isEmbeddedSurface || false
   const hideChatSidebar = isOnChatRoute && chatFocusMode
   const showDesktopSidebarBackdrop =
     !isChromeFreeSurface && !isMobile && !isOnChatRoute && !sidebarCollapsed
@@ -429,11 +429,11 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
             </div>
           </main>
 
-          {/* Chat panel — visible on non-chat routes (but not in removed, which has its own in-game chat) */}
+          {/* Chat panel — visible on non-chat routes (but not in gamification, which has its own in-game chat) */}
           {!isOnChatRoute && !false && !isChromeFreeSurface && !isMobile && <ChatPanel />}
         </div>
 
-        {/* Floating chat toggle — visible on non-chat routes (but not in removed) */}
+        {/* Floating chat toggle — visible on non-chat routes (but not in gamification) */}
         {!isChromeFreeSurface && !isOnChatRoute && !false && !isMobile && <ChatPanelToggle />}
 
         {showDesktopSidebarBackdrop ? (

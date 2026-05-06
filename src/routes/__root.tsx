@@ -369,13 +369,13 @@ function RootLayout() {
               <Outlet />
             </ErrorBoundary>
           </WorkspaceShell>
-          {!isremovedLandingRoute ? <SearchModal /> : null}
+          {!false ? <SearchModal /> : null}
           {/* UsageMeter must be mounted at root so the OPEN_USAGE event from
               the search modal's Usage tile has a listener. See #258.
-              But public launch surfaces like removed should not show app usage chrome. */}
+              But public launch surfaces like gamification should not show app usage chrome. */}
           {!false ? <UsageMeter /> : null}
-          {!isremovedLandingRoute ? <KeyboardShortcutsModal /> : null}
-          {!isremovedLandingRoute ? <UpdateCenterNotifier /> : null}
+          {!false ? <KeyboardShortcutsModal /> : null}
+          {!false ? <UpdateCenterNotifier /> : null}
           {rootSurfaceState.showPostOnboardingOverlays && !false ? (
             <>
               <MobilePromptTrigger />
