@@ -180,7 +180,7 @@ export function MobilePromptTrigger() {
                     className="text-xs"
                     style={{ color: 'var(--theme-muted)' }}
                   >
-                    Connect your phone to this Hermes Workspace instance in a
+                    Connect your phone to this Heimdall Workspace instance in a
                     few steps.
                   </p>
                 </div>

@@ -139,7 +139,7 @@ export const Route = createFileRoute('/api/conductor-spawn')({
             {
               ok: false,
               error:
-                'Conductor dashboard mode is unavailable on this Hermes Agent build. Update Hermes Workspace to use portable mode for mission execution, or run a backend that exposes /api/conductor/missions.',
+                'Conductor dashboard mode is unavailable on this Hermes Agent build. Update Heimdall Workspace to use portable mode for mission execution, or run a backend that exposes /api/conductor/missions.',
             },
             { status: 501 },
           )

@@ -310,7 +310,7 @@ export function MobileTabBar() {
                     'flex items-center justify-center rounded-full transition-all duration-200',
                     circleSize,
                     isActive
-                      ? 'bg-accent-500 text-white shadow-sm'
+                      ? 'bg-accent-500 text-gray-900 shadow-sm'
                       : 'text-primary-500',
                   )}
                 >

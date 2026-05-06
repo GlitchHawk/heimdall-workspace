@@ -284,7 +284,7 @@ export function OverviewTab({
                         className={cn(
                           'flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition-colors',
                           isRunning
-                            ? 'border-accent-500 bg-accent-500 text-white hover:bg-accent-600'
+                            ? 'border-accent-500 bg-accent-500 text-gray-900 hover:bg-accent-600'
                             : 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50',
                         )}
                       >

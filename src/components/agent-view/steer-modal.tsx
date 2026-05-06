@@ -91,7 +91,7 @@ export function SteerModal({
               onClick={function onClickSend() {
                 void handleSend()
               }}
-              className="bg-accent-500 text-white hover:bg-accent-600"
+              className="bg-accent-500 text-gray-900 hover:bg-accent-600"
             >
               {pending ? 'Sending...' : 'Send'}
             </Button>

@@ -676,7 +676,7 @@ function HermesContent() {
                           setEditingKey(null)
                           setKeyInput('')
                         }}
-                        className="rounded-lg px-2 py-1 text-[11px] font-medium bg-accent-500 text-white"
+                        className="rounded-lg px-2 py-1 text-[11px] font-medium bg-accent-500 text-gray-900"
                       >
                         Save
                       </button>
@@ -979,7 +979,7 @@ function AppearanceContent() {
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors',
                 settings.theme === option.value
-                  ? 'bg-accent-500 text-white'
+                  ? 'bg-accent-500 text-gray-900'
                   : 'text-primary-600 hover:bg-primary-100',
               )}
             >
@@ -2144,7 +2144,7 @@ export function SettingsDialog({
                 Settings
               </DialogTitle>
               <DialogDescription className="sr-only">
-                Configure Hermes Workspace
+                Configure Heimdall Workspace
               </DialogDescription>
             </div>
             <DialogClose

@@ -33,7 +33,7 @@ export const Route = createFileRoute('/files')({
         </p>
         <button
           onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-accent-500 text-white rounded-lg hover:bg-accent-600 transition-colors"
+          className="px-4 py-2 bg-accent-500 text-gray-900 rounded-lg hover:bg-accent-600 transition-colors"
         >
           Reload Page
         </button>

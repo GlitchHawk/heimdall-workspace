@@ -295,7 +295,7 @@ export function AgentChatPanel({
                 className={cn(
                   'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm',
                   msg.role === 'user'
-                    ? 'bg-accent-500 text-white rounded-br-md'
+                    ? 'bg-accent-500 text-gray-900 rounded-br-md'
                     : msg.role === 'system'
                       ? 'bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300 text-xs italic'
                       : 'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100 rounded-bl-md',

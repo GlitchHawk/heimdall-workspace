@@ -496,7 +496,7 @@ export function ProfilesScreen() {
                       wizardStep > step
                         ? 'bg-emerald-500 text-white'
                         : wizardStep === step
-                          ? 'bg-accent-500 text-white'
+                          ? 'bg-accent-500 text-gray-900'
                           : 'border border-primary-200 bg-primary-100 text-primary-400 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-500',
                     )}
                   >
