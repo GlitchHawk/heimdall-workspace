@@ -578,8 +578,6 @@ function ChatSidebarComponent({
   const isSkillsActive = pathname === '/skills'
   const isMcpActive = pathname === '/mcp'
   const isFilesActive = pathname === '/files'
-  const isPlaygroundActive = pathname === '/playground'
-  const isAgoraActive = pathname === '/agora'
   const isTerminalActive = pathname === '/terminal'
   const isJobsActive = pathname === '/jobs'
   const isMemoryActive = pathname === '/memory'
@@ -1032,18 +1030,17 @@ function ChatSidebarComponent({
         </div>
       )}
 
-      {/* ── HermesWorld featured link (gold castle, NEW badge) ────── */}
+      {/* ── removed featured link (gold castle, NEW badge) ────── */}
       {/* Hide when VITE_HERMESWORLD_ENABLED is explicitly '0' */}
       {!isVisuallyCollapsed &&
         (import.meta as any).env?.VITE_HERMESWORLD_ENABLED !== '0' && (
         <div className="px-2 pb-2">
           <Link
-            to="/playground"
             onClick={() => onSelectSession?.()}
             className={cn(
               buttonVariants({ variant: 'ghost', size: 'sm' }),
               'group w-full justify-start gap-2.5 px-3 py-2 text-primary-900 hover:bg-primary-200 dark:hover:bg-primary-800',
-              isPlaygroundActive &&
+              false &&
                 'bg-accent-500/10 text-accent-500 hover:bg-accent-50 dark:hover:bg-accent-900/300/15',
             )}
             data-tour="hermesworld"
@@ -1055,7 +1052,7 @@ function ChatSidebarComponent({
               className="size-5 shrink-0"
               style={{ color: '#facc15' }}
             />
-            <span>HermesWorld</span>
+            <span>removed</span>
             <span
               className="ml-auto inline-flex min-w-6 items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold leading-none"
               style={{
